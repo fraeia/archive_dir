@@ -5,6 +5,7 @@ from datetime import datetime
 from tqdm import tqdm
 import sqlite3
 import mimetypes
+from azure.storage.blob import BlobServiceClient, BlobClient, ContainerClient
 
 def get_directory_size(directory):
     total_size = 0
@@ -41,7 +42,7 @@ def compress_files(src_dir, dest_dir):
                 
                 pbar.update(1)
 
-def generate_directory_tree_to_db(src_dir, dest_dir, db_path):
+def generate_directory_tree_to_db(src_dir, dest_dir, db_path, timestamp):
     conn = sqlite3.connect(db_path)
     cursor = conn.cursor()
     
@@ -70,7 +71,7 @@ def generate_directory_tree_to_db(src_dir, dest_dir, db_path):
             cursor.execute('''
                 INSERT INTO files (filename, filepath, content_type, size, creation_time, modification_time)
                 VALUES (?, ?, ?, ?, ?, ?)
-            ''', (dir, dir_path, "directory", size, creation_time, modification_time))
+            ''', (dir, os.path.join(timestamp, relative_path).replace("\\", "/"), "directory", size, creation_time, modification_time))
         
         for file in files:
             dest_file_path = os.path.join(root, file)
@@ -85,23 +86,53 @@ def generate_directory_tree_to_db(src_dir, dest_dir, db_path):
             cursor.execute('''
                 INSERT INTO files (filename, filepath, content_type, size, creation_time, modification_time)
                 VALUES (?, ?, ?, ?, ?, ?)
-            ''', (original_filename, dest_file_path, content_type, size, creation_time, modification_time))
+            ''', (original_filename, os.path.join(timestamp, relative_path, file).replace("\\", "/"), content_type, size, creation_time, modification_time))
     
     conn.commit()
     conn.close()
 
+def upload_to_azure(container_name, connection_string, dest_dir, timestamp):
+    blob_service_client = BlobServiceClient.from_connection_string(connection_string)
+    container_client = blob_service_client.get_container_client(container_name)
+    
+    # Count total files for progress bar
+    total_files = sum(len(files) for _, _, files in os.walk(dest_dir))
+    
+    with tqdm(total=total_files, desc="Uploading to Azure", unit="file") as pbar:
+        for root, dirs, files in os.walk(dest_dir):
+            for file in files:
+                file_path = os.path.join(root, file)
+                blob_path = os.path.join(timestamp, os.path.relpath(file_path, dest_dir)).replace("\\", "/")
+                blob_client = container_client.get_blob_client(blob_path)
+                
+                with open(file_path, "rb") as data:
+                    blob_client.upload_blob(data, overwrite=True)
+                    pbar.update(1)
+
+def remove_directory(directory):
+    for root, dirs, files in os.walk(directory, topdown=False):
+        for file in files:
+            os.remove(os.path.join(root, file))
+        for dir in dirs:
+            os.rmdir(os.path.join(root, dir))
+    os.rmdir(directory)
+
 if __name__ == "__main__":
-    # Temporarily set source and destination directories and database path for debugging
-    src_directory = r"C:\Temp\Code"
-    dest_directory = r"C:\Temp\Code7z"
-    db_path = r"C:\Temp\directory_tree.db"
+    parser = argparse.ArgumentParser(description="Compress files in a directory individually and save metadata to a database.")
+    parser.add_argument("src_directory", help="Source directory to compress files from")
+    parser.add_argument("dest_directory", help="Destination directory to save compressed files")
+    parser.add_argument("db_path", help="Path to the SQLite database file")
+    parser.add_argument("--azure_container", help="Azure Blob Storage container name")
+    parser.add_argument("--azure_connection_string", help="Azure Blob Storage connection string")
+    
+    args = parser.parse_args()
     
     start_time = datetime.now()
     print(f"Process started at: {start_time}")
     
-    original_size = get_directory_size(src_directory)
-    compress_files(src_directory, dest_directory)
-    compressed_size = get_directory_size(dest_directory)
+    original_size = get_directory_size(args.src_directory)
+    compress_files(args.src_directory, args.dest_directory)
+    compressed_size = get_directory_size(args.dest_directory)
     
     end_time = datetime.now()
     print(f"Process ended at: {end_time}")
@@ -109,15 +140,18 @@ if __name__ == "__main__":
     print(f"Total original size: {format_size(original_size)}")
     print(f"Total compressed size: {format_size(compressed_size)}")
     
-    # Generate and save the destination directory tree to a database
-    generate_directory_tree_to_db(src_directory, dest_directory, db_path)
-    print(f"Directory tree saved to database: {db_path}")
+    # Generate a timestamp
+    timestamp = datetime.now().strftime("%Y%m%d%H%M%S")
     
-    # Uncomment the following lines to use command-line arguments instead
-    # parser = argparse.ArgumentParser(description="Compress files in a directory individually and save metadata to a database.")
-    # parser.add_argument("src_directory", help="Source directory to compress files from")
-    # parser.add_argument("dest_directory", help="Destination directory to save compressed files")
-    # parser.add_argument("db_path", help="Path to the SQLite database file")
-    # args = parser.parse_args()
-    # compress_files(args.src_directory, args.dest_directory)
-    # generate_directory_tree_to_db(args.src_directory, args.dest_directory, args.db_path)
+    # Generate and save the destination directory tree to a database
+    generate_directory_tree_to_db(args.src_directory, args.dest_directory, args.db_path, timestamp)
+    print(f"Directory tree saved to database: {args.db_path}")
+    
+    # Upload to Azure Blob Storage if specified
+    if args.azure_container and args.azure_connection_string:
+        upload_to_azure(args.azure_container, args.azure_connection_string, args.dest_directory, timestamp)
+        print(f"Files uploaded to Azure Blob Storage container: {args.azure_container}")
+        
+        # Remove the created destination files and directory
+        remove_directory(args.dest_directory)
+        print(f"Removed destination directory: {args.dest_directory}")
