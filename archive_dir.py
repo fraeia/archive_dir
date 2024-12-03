@@ -6,6 +6,9 @@ from tqdm import tqdm
 import sqlite3
 import mimetypes
 from azure.storage.blob import BlobServiceClient, BlobClient, ContainerClient
+from PIL import Image
+from moviepy import VideoFileClip
+import cairosvg
 
 def get_directory_size(directory):
     total_size = 0
@@ -42,6 +45,29 @@ def compress_files(src_dir, dest_dir):
                 
                 pbar.update(1)
 
+def generate_thumbnail(file_path, content_type):
+    thumbnail = None
+    if content_type.startswith('image/'):
+        if file_path.lower().endswith('.svg'):
+            # Convert SVG to PNG
+            png_file_path = file_path + '.png'
+            cairosvg.svg2png(url=file_path, write_to=png_file_path)
+            file_path = png_file_path
+        
+        with Image.open(file_path) as img:
+            img.thumbnail((128, 128))
+            thumbnail = img.tobytes()
+    elif content_type.startswith('video/'):
+        try:
+            with VideoFileClip(file_path) as video:
+                frame = video.get_frame(1)
+                img = Image.fromarray(frame)
+                img.thumbnail((128, 128))
+                thumbnail = img.tobytes()
+        except Exception as e:
+            print(f"Error generating thumbnail for video file {file_path}: {e}")
+    return thumbnail
+
 def generate_directory_tree_to_db(src_dir, dest_dir, db_path, timestamp):
     conn = sqlite3.connect(db_path)
     cursor = conn.cursor()
@@ -55,7 +81,8 @@ def generate_directory_tree_to_db(src_dir, dest_dir, db_path, timestamp):
             content_type TEXT,
             size INTEGER,
             creation_time TEXT,
-            modification_time TEXT
+            modification_time TEXT,
+            thumbnail BLOB
         )
     ''')
     
@@ -69,24 +96,25 @@ def generate_directory_tree_to_db(src_dir, dest_dir, db_path, timestamp):
             creation_time = datetime.fromtimestamp(stat.st_ctime).isoformat()
             modification_time = datetime.fromtimestamp(stat.st_mtime).isoformat()
             cursor.execute('''
-                INSERT INTO files (filename, filepath, content_type, size, creation_time, modification_time)
-                VALUES (?, ?, ?, ?, ?, ?)
-            ''', (dir, os.path.join(timestamp, relative_path).replace("\\", "/"), "directory", size, creation_time, modification_time))
+                INSERT INTO files (filename, filepath, content_type, size, creation_time, modification_time, thumbnail)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+            ''', (dir, os.path.join(timestamp, relative_path).replace("\\", "/"), "directory", size, creation_time, modification_time, None))
         
         for file in files:
             dest_file_path = os.path.join(root, file)
             relative_path = os.path.relpath(root, dest_dir)
-            src_file_path = os.path.join(src_dir, relative_path)
+            src_file_path = os.path.join(src_dir, relative_path, file.replace('.7z', ''))
             original_filename = file.replace('.7z', '')  # Remove the .7z extension to get the original filename
-            content_type, _ = mimetypes.guess_type(os.path.join(src_file_path, original_filename))
+            content_type, _ = mimetypes.guess_type(src_file_path)
             stat = os.stat(dest_file_path)
             size = stat.st_size
             creation_time = datetime.fromtimestamp(stat.st_ctime).isoformat()
             modification_time = datetime.fromtimestamp(stat.st_mtime).isoformat()
+            thumbnail = generate_thumbnail(src_file_path, content_type) if content_type and (content_type.startswith('image/') or content_type.startswith('video/')) else None
             cursor.execute('''
-                INSERT INTO files (filename, filepath, content_type, size, creation_time, modification_time)
-                VALUES (?, ?, ?, ?, ?, ?)
-            ''', (original_filename, os.path.join(timestamp, relative_path, file).replace("\\", "/"), content_type, size, creation_time, modification_time))
+                INSERT INTO files (filename, filepath, content_type, size, creation_time, modification_time, thumbnail)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+            ''', (original_filename, os.path.join(timestamp, relative_path, file).replace("\\", "/"), content_type, size, creation_time, modification_time, thumbnail))
     
     conn.commit()
     conn.close()

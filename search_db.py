@@ -13,7 +13,7 @@ def search_database(db_path, filter_criteria):
     cursor = conn.cursor()
     
     # Select only the required columns in the desired order
-    query = "SELECT id, filename, content_type, size, filepath FROM files WHERE "
+    query = "SELECT id, filename, content_type, size, filepath, thumbnail FROM files WHERE "
     query += " AND ".join([f"{key} LIKE ?" for key in filter_criteria.keys()])
     values = [f"%{value}%" for value in filter_criteria.values()]
     
@@ -24,9 +24,9 @@ def search_database(db_path, filter_criteria):
     return results
 
 if __name__ == "__main__":
-    # Temporarily set db_path and filename for debugging
+    # Temporarily set db_path and filter criteria for debugging
     db_path = r"C:\Temp\directory_tree.db"
-    filter_criteria = {"filename": "%savills%"}  # Using wildcard to match any filename containing 'package'
+    filter_criteria = {"filename": "%svg%"}  # Match filenames ending with 'svg'
     
     results = search_database(db_path, filter_criteria)
     
@@ -34,6 +34,7 @@ if __name__ == "__main__":
     for row in results:
         row = list(row)
         row[3] = format_size(row[3])  # Format the size column
+        row[5] = "Thumbnail exists" if row[5] else "No thumbnail"  # Indicate if a thumbnail exists
         print("\t".join(map(str, row)))
     
     # Uncomment the following lines to use command-line arguments instead
@@ -56,4 +57,5 @@ if __name__ == "__main__":
     # for row in results:
     #     row = list(row)
     #     row[3] = format_size(row[3])  # Format the size column
+    #     row[5] = "Thumbnail exists" if row[5] else "No thumbnail"  # Indicate if a thumbnail exists
     #     print("\t".join(map(str, row)))
