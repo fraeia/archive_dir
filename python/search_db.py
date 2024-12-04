@@ -34,7 +34,7 @@ if __name__ == "__main__":
     for row in results:
         row = list(row)
         row[3] = format_size(row[3])  # Format the size column
-        row[5] = "Thumbnail exists" if row[5] else "No thumbnail"  # Indicate if a thumbnail exists
+        row[5] = format_size(len(row[5])) if row[5] else "No thumbnail"  # Show the blob size or indicate if no thumbnail exists
         print("\t".join(map(str, row)))
     
     # Uncomment the following lines to use command-line arguments instead
@@ -57,5 +57,5 @@ if __name__ == "__main__":
     # for row in results:
     #     row = list(row)
     #     row[3] = format_size(row[3])  # Format the size column
-    #     row[5] = "Thumbnail exists" if row[5] else "No thumbnail"  # Indicate if a thumbnail exists
+    #     row[5] = format_size(len(row[5])) if row[5] else "No thumbnail"  # Show the blob size or indicate if no thumbnail exists
     #     print("\t".join(map(str, row)))

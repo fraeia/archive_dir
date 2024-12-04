@@ -1,0 +1,71 @@
+# Build results
+bin/
+obj/
+build/
+
+# Visual Studio files
+.vs/
+*.user
+*.suo
+*.userprefs
+*.pidb
+*.opendb
+*.ldb
+
+# Visual Studio Code
+.vscode/
+
+# MonoDevelop
+*.pidb
+*.userprefs
+*.unityproj
+
+# Rider
+.idea/
+*.sln.iml
+
+# ReSharper
+_ReSharper*/
+*.[Rr]e[Ss]harper
+
+# NuGet Packages
+packages/
+*.nupkg
+# Uncomment if necessary
+# **/packages/*
+
+# Backup & report files
+*.bak
+*.mdf
+*.ldf
+*.ndf
+*.log
+
+# Azure settings
+*.Publish.xml
+appsettings.Development.json
+
+# Environment variables
+.env
+
+# Database files
+*.db
+*.sqlite
+*.sqlite3
+
+# Compression files
+*.zip
+*.rar
+*.7z
+*.gz
+*.tar
+
+# Thumbnails
+Thumbs.db
+ehthumbs.db
+
+# Others
+*.tmp
+*.tmp.*
+*.temp
+*~
